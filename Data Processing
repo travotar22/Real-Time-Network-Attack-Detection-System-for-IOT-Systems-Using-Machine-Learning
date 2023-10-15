@@ -1,0 +1,21 @@
+import pandas as pd
+import ipaddress
+
+# Load data from CSV
+file_path = "packets_data.csv"
+df = pd.read_csv(file_path)
+
+# Convert IP addresses to integers
+df['Src IP'] = df['Src IP'].apply(lambda x: int(ipaddress.ip_address(x)))
+df['Dst IP'] = df['Dst IP'].apply(lambda x: int(ipaddress.ip_address(x)))
+
+# One-hot encode the 'Flags' column
+df_flags = pd.get_dummies(df['Flags'], prefix='Flag')
+
+# Drop the original 'Flags' column and concatenate the one-hot encoded flags
+df = df.drop(columns='Flags').join(df_flags)
+
+# Optional: save the preprocessed data to a new CSV
+df.to_csv("preprocessed_data.csv", index=False)
+
+print(df)
