@@ -1,0 +1,115 @@
+import joblib
+from scapy.all import sniff, IP, TCP, UDP
+import pandas as pd
+import warnings
+from sklearn.exceptions import DataConversionWarning
+
+warnings.simplefilter(action='ignore', category=DataConversionWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.base", lineno=439)
+# Load the trained model
+model = joblib.load("trained_knn_model.joblib")
+
+
+def extract_features(packet):
+    """
+    Extract features from the given packet.
+    """
+    features = {}
+
+    # Define flags_map here so it's always accessible
+    flags_map = {
+        "F": "Flag_0",
+        "A": "Flag_A",
+        "FA": "Flag_FA",
+        "PA": "Flag_PA",
+        "R": "Flag_R",
+        "RA": "Flag_RA",
+        "S": "Flag_S",
+        "SA": "Flag_SA"
+    }
+
+    # IP Layer Features
+    if IP in packet:
+        features['Src IP'] = packet[IP].src
+        features['Dst IP'] = packet[IP].dst
+        features['TTL'] = packet[IP].ttl
+    else:
+        features['Src IP'] = '0.0.0.0'
+        features['Dst IP'] = '0.0.0.0'
+        features['TTL'] = 0
+
+    # Transport Layer Features
+    if TCP in packet:
+        features['Src Port'] = packet[TCP].sport
+        features['Dst Port'] = packet[TCP].dport
+        features['Protocol'] = "TCP"
+
+        # TCP Flags
+        for flag, feature_name in flags_map.items():
+            features[feature_name] = int(flag in packet[TCP].flags)
+    elif UDP in packet:
+        features['Src Port'] = packet[UDP].sport
+        features['Dst Port'] = packet[UDP].dport
+        features['Protocol'] = "UDP"
+        for flag in flags_map.values():
+            features[flag] = 0
+    else:
+        features['Src Port'] = 0
+        features['Dst Port'] = 0
+        features['Protocol'] = "OTHER"
+        for flag in flags_map.values():
+            features[flag] = 0
+
+    # Packet Size
+    features['Packet Size'] = len(packet)
+
+    return features
+
+
+def preprocess_data(features):
+    """
+    Preprocess the features for prediction.
+    """
+    # Remove IP addresses as they're non-numeric
+    del features['Src IP']
+    del features['Dst IP']
+
+    # One-hot encoding for Protocol feature
+    for protocol in ["TCP", "UDP", "OTHER"]:
+        key = f"Protocol_{protocol}"
+        if features['Protocol'] == protocol:
+            features[key] = 1
+        else:
+            features[key] = 0
+    del features['Protocol']
+
+    return list(features.values())
+
+
+def packet_callback(packet):
+    """
+    Callback function to process each packet.
+    """
+    raw_features = extract_features(packet)
+    processed_features = preprocess_data(raw_features)
+
+    # Verify that all processed_features are numeric
+    for feature in processed_features:
+        if not isinstance(feature, (int, float)):
+            print(f"Non-numeric feature detected: {feature}")
+            return
+
+    is_malicious = model.predict([processed_features])[0]
+    print(f"Packet {packet.summary()} is {'Malicious' if is_malicious else 'Normal'}")
+
+
+def capture_and_predict(interface_name):
+    """
+    Capture traffic from a specific network interface and predict if it's malicious or benign.
+    """
+    sniff(iface=interface_name, prn=packet_callback, store=0)
+
+
+if __name__ == "__main__":
+    interface = "VMware Network Adapter VMnet1"  # replace with the name of your network interface
+    capture_and_predict(interface)
