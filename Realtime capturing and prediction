@@ -12,7 +12,7 @@ def ip_to_int(ip_address):
     try:
         return int(socket.inet_aton(ip_address).hex(), 16)
     except socket.error:
-        return 0  
+        return 0
 
 def packet_info(packet):
     if packet.haslayer(scapy.IP):
@@ -21,6 +21,34 @@ def packet_info(packet):
         ttl = packet[scapy.IP].ttl
         proto = packet[scapy.IP].proto
         packet_size = len(packet)
+
+        # Function to handle non-TCP/UDP packets
+        def handle_non_tcp_udp(packet):
+            # Creating a feature vector
+            feature_vector = [ip_src, ip_dst, 0, 0, proto, packet_size, ttl]
+
+            # Placeholder flag values for non-TCP/UDP packets
+            flag_placeholders = {
+                "Flag_0": 0,
+                "Flag_A": 0,
+                "Flag_FA": 0,
+                "Flag_PA": 0,
+                "Flag_R": 0,
+                "Flag_RA": 0,
+                "Flag_S": 0,
+                "Flag_SA": 0,
+            }
+
+            feature_vector.extend(flag_placeholders.values())
+
+            # Converting the feature vector into a pandas DataFrame with column names
+            feature_names = ['ip_src', 'ip_dst', 'src_port', 'dst_port', 'proto', 'packet_size', 'ttl'] + \
+                            list(flag_placeholders.keys())
+
+            feature_df = pd.DataFrame([feature_vector], columns=feature_names)
+
+            prediction = model.predict(feature_df)
+            print(f"Prediction: {'Malicious' if prediction else 'Not Malicious'}, Features: {feature_vector}")
 
         # Function to handle TCP and UDP packets
         def handle_packet(packet, src_port, dst_port, flag_details):
@@ -45,7 +73,7 @@ def packet_info(packet):
             tcp = packet[scapy.TCP]
 
             flags = {
-                "Flag_0": 0,  # Adjust this flag as per your definition
+                "Flag_0": 0,
                 "Flag_A": int(tcp.flags.A),
                 "Flag_FA": int(tcp.flags.F and tcp.flags.A),
                 "Flag_PA": int(tcp.flags.P and tcp.flags.A),
@@ -61,7 +89,7 @@ def packet_info(packet):
             src_port = packet[scapy.UDP].sport
             dst_port = packet[scapy.UDP].dport
 
-            # For UDP packets, flag details might not be applicable, you can modify as per your needs
+            # For UDP packets
             flags = {
                 "Flag_0": 0,
                 "Flag_A": 0,
@@ -76,7 +104,8 @@ def packet_info(packet):
             handle_packet(packet, src_port, dst_port, flags)
 
         else:
-            print("Non-TCP/UDP Packet")
+            print("Handling Non-TCP/UDP Packet")
+            handle_non_tcp_udp(packet)
 
 # Replace 'Wi-Fi' with your specific interface name
-scapy.sniff(iface="Wi-Fi", prn=packet_info, store=0)
+scapy.sniff(iface="VMware Network Adapter VMnet1mo", prn=packet_info, store=0)
